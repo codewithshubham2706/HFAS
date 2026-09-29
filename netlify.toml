@@ -1,0 +1,53 @@
+# Netlify config for the HFAS prototype (Vite SPA with HashRouter).
+# Import the repo on netlify.com and it picks this up automatically —
+# or link this folder with `netlify deploy --prod --dir=dist`.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA fallback: any route not matching a real file serves the app shell.
+# (HashRouter only needs "/" but this keeps deep links like /handoff safe too.)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Long-cache hashed Vite bundles; they never change content for a given name.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(self), geolocation=()"
+
+[[headers]]
+  for = "/favicon.svg"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
+    Cache-Control = "public, max-age=86400"
+
+# Tokens/handoff artifacts: fine to cache for a day
+[[headers]]
+  for = "/tokens.json"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+
+[[headers]]
+  for = "/css-vars.css"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
