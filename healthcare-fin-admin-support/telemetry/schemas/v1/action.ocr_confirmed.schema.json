@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hfas.example.org/schemas/v1/action.ocr_confirmed.schema.json",
+  "title": "action.ocr_confirmed (v1)",
+  "description": "User finished reviewing OCR fields for a document (all accepted/edited). Measures correction burden (KPI: % apps needing manual corrections).",
+  "allOf": [{ "$ref": "./base.schema.json" }],
+  "properties": {
+    "eventName": { "const": "action.ocr_confirmed" },
+    "properties": {
+      "type": "object",
+      "required": ["documentId", "acceptedCount", "editedCount", "lowConfidenceVerified"],
+      "properties": {
+        "documentId": { "type": "string", "format": "uuid" },
+        "acceptedCount": { "type": "integer", "minimum": 0 },
+        "editedCount": { "type": "integer", "minimum": 0 },
+        "lowConfidenceVerified": { "type": "integer", "minimum": 0, "description": "Red-tier fields explicitly verified by the user." },
+        "autoAcceptRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "dwellMs": { "type": "integer", "minimum": 0, "description": "Time on review panel — friction signal." }
+      },
+      "additionalProperties": false
+    }
+  }
+}

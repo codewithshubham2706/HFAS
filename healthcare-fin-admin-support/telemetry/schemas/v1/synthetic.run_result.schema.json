@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hfas.example.org/schemas/v1/synthetic.run_result.schema.json",
+  "title": "synthetic.run_result (v1)",
+  "description": "Playwright synthetic monitor outcome — emitted per scenario per run. Feeds alert rule synthetic_run_failure and the dashboard synthetic status panel.",
+  "allOf": [{ "$ref": "./base.schema.json" }],
+  "properties": {
+    "eventName": { "const": "synthetic.run_result" },
+    "properties": {
+      "type": "object",
+      "required": ["scenario", "outcome", "durationMs", "environment"],
+      "properties": {
+        "scenario": { "type": "string", "enum": ["upload_ocr_confirm_submit", "admin_quickreview_connector_submit", "signup_wizard_results"], "maxLength": 80 },
+        "outcome": { "type": "string", "enum": ["passed", "failed", "timeout", "skipped"] },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "environment": { "type": "string", "enum": ["local", "staging", "production_readonly"] },
+        "failedStep": { "type": ["string", "null"], "maxLength": 80 },
+        "runId": { "type": "string", "maxLength": 64 },
+        "scheduledRun": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

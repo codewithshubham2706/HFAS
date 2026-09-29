@@ -1,0 +1,66 @@
+# ═══════════════════════════════════════════════════════════════
+# HFAS — session replay masking policy (profile: strict)
+# Applied CLIENT-SIDE before any frame/text leaves the browser.
+# Server rejects replay payloads containing matches (defense in depth).
+# **REQUIRES LEGAL REVIEW** before loosening anything here.
+# ═══════════════════════════════════════════════════════════════
+version: 1
+profile: strict
+
+field_blacklist:
+  # Any element matching these selectors is replaced with a gray box —
+  # never captured, never sent.
+  selectors:
+    - 'input[type="password"]'
+    - 'input[type="tel"]'
+    - 'input[type="email"]'
+    - '[name="policy_no"]'
+    - '[name="national_id"]'
+    - '[name="bankAccount"]'
+    - '[name="ifsc"]'
+    - '[data-sensitive="true"]'          # opt-in marker for any component
+  text_fields:
+    - full_name
+    - date_of_birth
+    - address_line1
+    - address_line2
+    - national_id
+    - policy_no
+    - bankAccount
+    - ifsc
+    - esign_name
+
+regex_rules:
+  # Values are replaced BEFORE capture: "••••" placeholder.
+  - id: aadhaar
+    pattern: '\b\d{4}\s?\d{4}\s?\d{4}\b'
+    replacement: '••••••••••••'
+  - id: phone_in_text
+    pattern: '\b(?:\+91[\-\s]?)?[6-9]\d{4}[\s-]?\d{5}\b'
+    replacement: '••••••••••'
+  - id: email
+    pattern: '\b[\w.+-]+@[\w-]+\.[\w.]+\b'
+    replacement: '••••@•••••'
+  - id: ifsc
+    pattern: '\b[A-Z]{4}0[A-Z0-9]{6}\b'
+    replacement: '•••••••••••'
+  - id: account_last4
+    pattern: '\b\d{4}\b(?=[^\d]*$)'
+    replacement: '••••'
+    applies_to: [text_fields]
+
+# Replay SDK config expectations:
+#   maskAllInputs: true
+#   maskTextSelector: '[data-sensitive="true"], input, textarea'
+#   blockSelector: '.replay-block'        # e.g. doc preview thumbnails
+#   ignoreClassNames: ['u-shimmer']       # noise reduction
+blocked_pages:                            # never record these routes
+  - '/auth-signup'                        # OTP entry screen
+  - '*otp*'
+
+# Storage & encryption (server side):
+storage:
+  encryption: sse_kms                     # replay blobs in S3, KMS CMK
+  retention_days: 30                      # **REQUIRES LEGAL REVIEW**
+  access_roles: [support_lead, admin]     # reviewed in audit log
+  deletion: follows DSAR purge pipeline (docs/ComplianceReport.md §5)

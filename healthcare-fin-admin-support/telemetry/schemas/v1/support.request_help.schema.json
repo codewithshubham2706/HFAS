@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hfas.example.org/schemas/v1/support.request_help.schema.json",
+  "title": "support.request_help (v1)",
+  "description": "User opened support/chat, requested callback, or clicked an adaptive micro-intervention.",
+  "allOf": [{ "$ref": "./base.schema.json" }],
+  "properties": {
+    "eventName": { "const": "support.request_help" },
+    "properties": {
+      "type": "object",
+      "required": ["channel", "trigger"],
+      "properties": {
+        "channel": { "type": "string", "enum": ["chat", "callback", "help_tip", "outreach_reply"] },
+        "trigger": { "type": "string", "enum": ["user_initiated", "adaptive_intervention", "proactive_outreach", "error_recovery"] },
+        "page": { "type": "string", "maxLength": 120 },
+        "errorCode": { "type": ["string", "null"], "maxLength": 120, "description": "Error code only — e.g. 'ocr_failed_twice'. Never free-form text.", "pattern": "^[a-z0-9_]*$" },
+        "interventionId": { "type": ["string", "null"], "maxLength": 80, "description": "Set when trigger=adaptive_intervention." }
+      },
+      "additionalProperties": false
+    }
+  }
+}

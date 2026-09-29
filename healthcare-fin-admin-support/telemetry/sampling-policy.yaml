@@ -1,0 +1,53 @@
+# ═══════════════════════════════════════════════════════════════
+# HFAS — heatmap & session-replay sampling policy
+# Evaluated top-down; first match wins.
+# Consent is a hard gate: no replay without session.replay_consent
+# (granted=true) regardless of sampling rules.
+# ═══════════════════════════════════════════════════════════════
+version: 1
+
+rules:
+  - id: support_escalations
+    description: Full capture after a help request — you need the exact failure.
+    when: "event:support.request_help within previous or next 30 minutes of session start"
+    sample: 1.0
+    priority: 1
+
+  - id: synthetic_runs
+    description: Synthetic monitors always recorded (they test masking too).
+    when: "event:synthetic.run_result present in session"
+    sample: 1.0
+    priority: 2
+
+  - id: high_friction_cohort
+    description: Oversample sessions with effort_score >= 70 in last 24h.
+    when: "session_metrics.effort_score >= 70"
+    sample: 0.5
+    priority: 3
+
+  - id: experiment_cohorts
+    description: Oversample experiment arms to reach per-variant replay quota.
+    when: "event:experiment.assigned present"
+    sample: 0.25
+    priority: 4
+
+  - id: default_random
+    description: Baseline random sample.
+    when: "always"
+    sample: 0.10
+    priority: 99
+
+heatmaps:
+  # Heatmaps are aggregate-only (no session storage): selector-level click/rage-click
+  # maps built from event streams, so they run at 100% of sessions with zero
+  # replay consent requirement — events contain coordinates + element id only.
+  aggregate_only: true
+  rage_click_threshold: 3          # clicks on same element in 2s
+  dead_click_window_ms: 2500
+  excluded_pages: ['/auth-signup'] # OTP screen never instrumented at coordinate level
+
+storage:
+  replay_codec: webm_vp9_dom_events     # DOM-event based (rrweb style), not video
+  encryption: sse_kms
+  region_pinning: true                  # replays never leave deployment region
+  cost_guard: max_gb_per_day: 50

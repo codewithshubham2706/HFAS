@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hfas.example.org/schemas/v1/base.schema.json",
+  "title": "HFAS event envelope (v1)",
+  "description": "Base envelope every telemetry event extends. PII policy: properties MUST NOT contain raw PII (names, IDs, phone, doc contents). Use hashed/aggregate identifiers. **REQUIRES LEGAL REVIEW** for any new identifier.",
+  "type": "object",
+  "required": ["schema", "eventId", "eventName", "schemaVersion", "sessionId", "anonymousId", "timestamp", "traceId", "properties"],
+  "properties": {
+    "schema": { "const": "hfas.telemetry" },
+    "eventId": { "type": "string", "format": "uuid", "description": "Unique per event; used for dedupe." },
+    "eventName": { "type": "string", "pattern": "^[a-z]+(\\.[a-z_]+){1,4}$" },
+    "schemaVersion": { "type": "string", "pattern": "^v\\d+(\\.\\d+)?$", "examples": ["v1", "v1.1"] },
+    "sessionId": { "type": "string", "format": "uuid", "description": "Client-generated, rotates after 30min inactivity." },
+    "userId": { "type": ["string", "null"], "format": "uuid", "description": "null for anonymous traffic." },
+    "anonymousId": { "type": "string", "format": "uuid", "description": "Persisted in localStorage; never joinable to national IDs." },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "traceId": { "type": "string", "description": "W3C trace-id; joins telemetry to API/server logs." },
+    "properties": { "type": "object", "additionalProperties": true }
+  },
+  "additionalProperties": false
+}

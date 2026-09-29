@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hfas.example.org/schemas/v1/session.replay_consent.schema.json",
+  "title": "session.replay_consent (v1)",
+  "description": "User granted/declined session-replay recording. Stored BOTH as an event and as an immutable consent_records row. **REQUIRES LEGAL REVIEW** for consent wording.",
+  "allOf": [{ "$ref": "./base.schema.json" }],
+  "properties": {
+    "eventName": { "const": "session.replay_consent" },
+    "properties": {
+      "type": "object",
+      "required": ["granted", "consentVersion"],
+      "properties": {
+        "granted": { "type": "boolean" },
+        "consentVersion": { "type": "string", "maxLength": 20, "examples": ["replay-v1.0"] },
+        "scope": { "type": "string", "enum": ["current_session", "all_future_sessions"], "description": "all_future requires an explicit opt-in checkbox — never pre-ticked. **REQUIRES LEGAL REVIEW**" },
+        "maskingProfile": { "type": "string", "enum": ["strict"], "description": "Always 'strict' in v1 — see telemetry/masking-policy.yaml." }
+      },
+      "additionalProperties": false
+    }
+  }
+}

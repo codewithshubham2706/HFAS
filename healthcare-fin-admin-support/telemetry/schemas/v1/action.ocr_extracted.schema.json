@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hfas.example.org/schemas/v1/action.ocr_extracted.schema.json",
+  "title": "action.ocr_extracted (v1)",
+  "description": "Fired server-side when OCR completes for a document. Field values NEVER included — only counts and confidence distribution.",
+  "allOf": [{ "$ref": "./base.schema.json" }],
+  "properties": {
+    "eventName": { "const": "action.ocr_extracted" },
+    "properties": {
+      "type": "object",
+      "required": ["documentId", "docType", "provider", "fieldCount", "confidenceBuckets"],
+      "properties": {
+        "documentId": { "type": "string", "format": "uuid" },
+        "docType": { "type": "string", "maxLength": 60 },
+        "provider": { "type": "string", "enum": ["mock", "gcv"] },
+        "fieldCount": { "type": "integer", "minimum": 0, "maximum": 200 },
+        "confidenceBuckets": {
+          "type": "object",
+          "description": "Count of fields per confidence tier (UI: green/orange/red).",
+          "properties": {
+            "high_ge90": { "type": "integer", "minimum": 0 },
+            "medium_70_89": { "type": "integer", "minimum": 0 },
+            "low_lt70": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "latencyMs": { "type": "integer", "minimum": 0, "maximum": 600000 },
+        "status": { "type": "string", "enum": ["parsed", "flagged", "failed"] }
+      },
+      "additionalProperties": false
+    }
+  }
+}

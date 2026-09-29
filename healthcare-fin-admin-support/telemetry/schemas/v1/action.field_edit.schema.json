@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hfas.example.org/schemas/v1/action.field_edit.schema.json",
+  "title": "action.field_edit (v1)",
+  "description": "A user edited a form/OCR field. Only field NAMES and edit counts — never before/after values (PII).",
+  "allOf": [{ "$ref": "./base.schema.json" }],
+  "properties": {
+    "eventName": { "const": "action.field_edit" },
+    "properties": {
+      "type": "object",
+      "required": ["fieldName", "source"],
+      "properties": {
+        "fieldName": { "type": "string", "maxLength": 60, "examples": ["name", "dob", "policy_no", "city"], "pattern": "^[a-z0-9_]+$" },
+        "source": { "type": "string", "enum": ["ocr_prefill", "manual", "wizard_option"] },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "OCR confidence of the prefill being edited, if any." },
+        "editOrdinal": { "type": "integer", "minimum": 1, "description": "1st, 2nd… edit of this field in the session." }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,38 @@
+# ═══════════════════════════════════════════════════════════════
+# HFAS — telemetry retention policy
+# **REQUIRES LEGAL REVIEW** — periods below are proposals; confirm with
+# counsel/DPO for DPDP (India), GDPR (EU), and any US state laws.
+# ═══════════════════════════════════════════════════════════════
+version: 1
+
+entities:
+  raw_events:                       # telemetry_events table
+    retention_days: 365
+    purge_job: DELETE WHERE ts < now() - interval '365 days'
+    on_user_deletion: null_user_id_and_drop_anonymous_linkage   # DSAR: null user_id, keep anonymous aggregates
+
+  session_replays:
+    retention_days: 30
+    purge_job: s3_lifecycle_expire_30d
+    on_user_deletion: delete_immediately
+    note: replay blobs carry masked UI only (strict profile) but are deleted
+          on DSAR regardless — **REQUIRES LEGAL REVIEW**
+
+  session_metrics:                  # aggregates
+    retention_days: 730
+    purge_job: DELETE WHERE session_date < current_date - 730
+    on_user_deletion: null_user_id  # aggregate row survives, de-identified
+
+  replay_consent_records:
+    retention_years: 8              # legal-basis proof — matches consent_records
+    immutable: true
+    on_user_deletion: retain_stub
+
+  synthetic_runs:
+    retention_days: 180
+
+jobs:
+  nightly_purge:
+    schedule: "0 2 * * *"
+  dsar_purge:
+    schedule: "0 3 * * *"           # follows docs/ComplianceReport.md §5 pipeline

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hfas.example.org/schemas/v1/action.upload_attempt.schema.json",
+  "title": "action.upload_attempt (v1)",
+  "description": "Fired when the user initiates a document upload. No file contents, no filenames with PII — file size bucketed.",
+  "allOf": [{ "$ref": "./base.schema.json" }],
+  "properties": {
+    "eventName": { "const": "action.upload_attempt" },
+    "properties": {
+      "type": "object",
+      "required": ["docType", "contentType", "sizeBucket", "inputMethod"],
+      "properties": {
+        "docType": { "type": "string", "maxLength": 60, "examples": ["aadhaar", "hospital_invoice", "income_proof", "bank_passbook"] },
+        "contentType": { "type": "string", "maxLength": 120 },
+        "sizeBucket": { "type": "string", "enum": ["lt_100kb", "100kb_1mb", "1mb_5mb", "5mb_10mb", "gt_10mb"] },
+        "inputMethod": { "type": "string", "enum": ["drag_drop", "file_picker", "camera_capture"] },
+        "documentId": { "type": ["string", "null"], "format": "uuid" },
+        "error": { "type": "string", "maxLength": 120, "description": "Error code only (e.g. 'storage_put_failed'); never message bodies that could embed PII." }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hfas.example.org/schemas/v1/page_view.schema.json",
+  "title": "page_view (v1)",
+  "allOf": [{ "$ref": "./base.schema.json" }],
+  "properties": {
+    "eventName": { "const": "page_view" },
+    "properties": {
+      "type": "object",
+      "required": ["page"],
+      "properties": {
+        "page": { "type": "string", "maxLength": 120, "examples": ["landing", "auth-signup", "wizard/2", "application-documents"] },
+        "referrer": { "type": "string", "maxLength": 200 },
+        "locale": { "type": "string", "enum": ["en-IN", "en-GB", "en-US", "es"] },
+        "loadMs": { "type": "integer", "minimum": 0, "maximum": 60000 },
+        "a11yMode": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

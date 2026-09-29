@@ -1,0 +1,513 @@
+openapi: 3.0.3
+info:
+  title: HFAS API
+  version: 0.1.0
+  description: |
+    Healthcare Financial & Administrative Support.
+    Auth = OTP or email+password, JWT bearer tokens.
+    PII flows (documents, applications, consent) are audited; sensitive
+    columns are encrypted at rest. This contract **REQUIRES LEGAL REVIEW**
+    wherever payloads touch personal data (see docs/ComplianceReport.md).
+servers:
+  - url: http://localhost:4000/api
+    description: Local dev
+  - url: https://api.hfas.example.org/api
+    description: Production (placeholder — **REQUIRES LEGAL REVIEW** before real domain)
+tags:
+  - name: auth
+  - name: users
+  - name: schemes
+  - name: eligibility
+  - name: documents
+  - name: applications
+  - name: notifications
+  - name: data-requests
+  - name: webhooks
+  - name: admin
+paths:
+  /auth/request-otp:
+    post:
+      tags: [auth]
+      summary: Send a 6-digit OTP to phone (SMS) or email
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [destination, channel]
+              properties:
+                destination: { type: string, example: '+919876543210' }
+                channel: { type: string, enum: [sms, email] }
+      responses:
+        '200':
+          description: OTP sent (dev mode also returns devOtp — never in production)
+          content:
+            application/json:
+              example: { sent: true, devOtp: '482913' }
+  /auth/verify-otp:
+    post:
+      tags: [auth]
+      summary: Verify OTP; returns JWT pair
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [destination, code, channel]
+              properties:
+                destination: { type: string, example: '+919876543210' }
+                code: { type: string, example: '482913' }
+                channel: { type: string, enum: [sms, email] }
+      responses:
+        '200':
+          description: Token pair
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken: { type: string }
+                  refreshToken: { type: string }
+                  userId: { type: string, format: uuid }
+                  isNewUser: { type: boolean }
+        '401': { description: expired / wrong / too many attempts }
+  /auth/signup:
+    post:
+      tags: [auth]
+      summary: Email/phone + password signup
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+                phone: { type: string, example: '+919876543210' }
+                password: { type: string, minLength: 10 }
+                role: { type: string, enum: [patient, caregiver], default: patient }
+                locale: { type: string, example: 'en-IN' }
+      responses:
+        '201': { description: Created; token pair returned }
+        '409': { description: account exists }
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Email + password login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200': { description: Token pair }
+        '401': { description: invalid credentials (uniform error, no user enumeration) }
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200': { description: New token pair (old refresh revoked) }
+  /users/{id}/profile:
+    get:
+      tags: [users]
+      summary: Fetch profile (own; admin may read others — audited)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Profile (national_id never returned; only last4) }
+        '404': { description: not found }
+    put:
+      tags: [users]
+      summary: Upsert profile; national_id is encrypted at rest
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                full_name: { type: string }
+                date_of_birth: { type: string, format: date }
+                address_line1: { type: string }
+                city: { type: string }
+                state: { type: string }
+                postal_code: { type: string }
+                national_id:
+                  type: string
+                  description: SENSITIVE — write-only; stored encrypted. **REQUIRES LEGAL REVIEW** for collection justification.
+                annual_income_inr: { type: number }
+                household_size: { type: integer }
+      responses:
+        '200': { description: Updated profile }
+  /schemes:
+    get:
+      tags: [schemes]
+      summary: Public catalog with search + provider filter
+      security: []
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: full-text search }
+        - { name: providerType, in: query, schema: { type: string, enum: [govt, insurer, trust] } }
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        '200':
+          description: Scheme list
+          content:
+            application/json:
+              example:
+                - id: aaaaaaa1-0000-4000-8000-000000000001
+                  slug: hospital-care-subsidy
+                  name: Hospital Care Subsidy
+                  provider_type: govt
+                  max_amount_inr: '200000'
+  /eligibility/assess:
+    post:
+      tags: [eligibility]
+      summary: Score facts against all active schemes (returns match % and why)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                profile:
+                  type: object
+                  properties:
+                    annual_income_inr: { type: number, example: 240000 }
+                    household_size: { type: integer, example: 4 }
+                    has_insurer_policy: { type: boolean }
+                onboarding:
+                  type: object
+                  properties:
+                    condition: { type: string, example: cardiac }
+                    facility_type: { type: string, enum: [govt, private, trust] }
+      responses:
+        '201':
+          description: Matches with per-scheme assessment
+          content:
+            application/json:
+              example:
+                - schemeId: aaaaaaa1-0000-4000-8000-000000000001
+                  slug: hospital-care-subsidy
+                  assessment:
+                    eligible: true
+                    score: 100
+                    reasons:
+                      - { met: true, describe: 'profile.annual_income_inr lte 300000' }
+  /documents/upload:
+    post:
+      tags: [documents]
+      summary: Step 1 — register upload intent; returns presigned PUT URL
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [doc_type, content_type, byte_size]
+              properties:
+                doc_type: { type: string, example: aadhaar }
+                content_type: { type: string, enum: [application/pdf, image/png, image/jpeg, image/webp] }
+                byte_size: { type: integer, maximum: 26214400 }
+                original_name: { type: string }
+      responses:
+        '201':
+          description: Presigned PUT target
+          content:
+            application/json:
+              example:
+                documentId: ccccccc1-0000-4000-8000-000000000009
+                uploadUrl: 'http://localhost:9000/hfas-documents/u/<uid>/<doc>.png?X-Amz-Signature=…'
+                method: PUT
+                expiresIn: 900
+  /documents/{id}/confirm:
+    post:
+      tags: [documents]
+      summary: Step 2 — confirm upload completed (checksum)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [checksum_sha256]
+              properties:
+                checksum_sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+      responses:
+        '201': { description: status → uploaded }
+  /documents/{id}/process-ocr:
+    post:
+      tags: [documents]
+      summary: Step 3 — run OCR pipeline (mock in dev; Google Vision pluggable)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '201':
+          description: parsed / flagged with extracted fields
+          content:
+            application/json:
+              example:
+                id: ccccccc1-0000-4000-8000-000000000009
+                status: parsed
+                fields:
+                  - { label: name, value: Sunita Devi, confidence: 0.98 }
+                  - { label: id_last4, value: '4218', confidence: 0.99 }
+        '400': { description: document not in a processable state }
+  /documents/{id}/fields:
+    get:
+      tags: [documents]
+      summary: Extracted fields for prefill
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Field list }
+  /documents/mine:
+    get:
+      tags: [documents]
+      summary: List caller's documents
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Document list }
+  /applications:
+    post:
+      tags: [applications]
+      summary: Create draft application
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scheme_slug]
+              properties:
+                scheme_slug: { type: string, example: hospital-care-subsidy }
+      responses:
+        '201': { description: Draft created (reference like INV-20260712-019) }
+  /applications/mine:
+    get:
+      tags: [applications]
+      summary: Caller's applications
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: List }
+  /applications/{id}/prefill:
+    get:
+      tags: [applications]
+      summary: Prefill map from OCR fields + prior answers
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: 'prefill: {label: value}' }
+  /applications/{id}/form:
+    put:
+      tags: [applications]
+      summary: Merge form data (partial); recompute progress
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                form_data: { type: object }
+      responses:
+        '200': { description: Updated progress }
+        '400': { description: already submitted }
+  /applications/{id}/consent:
+    post:
+      tags: [applications]
+      summary: Record immutable consent (required before submit)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [consent_version, scopes, esign_name]
+              properties:
+                consent_version: { type: string, example: v1.0 }
+                scopes:
+                  type: array
+                  items: { type: string, enum: [insurer, hospital, government] }
+                esign_name: { type: string, example: 'Sunita Devi' }
+                esign_method: { type: string, enum: [typed, docusign, aadhaar_esign], default: typed }
+      responses:
+        '201': { description: Consent row stored immutably }
+  /applications/{id}/submit:
+    post:
+      tags: [applications]
+      summary: Submit application (consent gate enforced)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '201': { description: 'reference + status=submitted' }
+        '400': { description: missing consent or wrong state }
+  /applications/{id}:
+    get:
+      tags: [applications]
+      summary: Detail + timeline events
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Application with timeline }
+  /applications/queue:
+    get:
+      tags: [applications]
+      summary: Staff queue (caseworker/admin)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: status, in: query, schema: { type: string, default: submitted } }]
+      responses:
+        '200': { description: Queue rows }
+  /applications/{id}/assign:
+    post:
+      tags: [applications]
+      summary: Assign caseworker (moves to under_review)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [caseworker_id]
+              properties:
+                caseworker_id: { type: string, format: uuid }
+      responses:
+        '201': { description: Assigned }
+  /applications/{id}/decision:
+    post:
+      tags: [applications]
+      summary: Approve/reject decision (staff); notifies citizen
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [approved, rejected] }
+                note: { type: string }
+      responses:
+        '201': { description: Decision recorded + notification queued }
+  /notifications/mine:
+    get:
+      tags: [notifications]
+      summary: Caller's notifications (timeline feed)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Feed }
+  /data-requests:
+    post:
+      tags: [data-requests]
+      summary: File access / correction / deletion request (GDPR & DPDP)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind: { type: string, enum: [access, correction, deletion] }
+                requested_changes:
+                  type: object
+                  additionalProperties: { type: string }
+                  example: { city: Nashik }
+      responses:
+        '201': { description: Request registered }
+  /data-requests/export:
+    get:
+      tags: [data-requests]
+      summary: Machine-readable export of all held data (right of access)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Full export }
+  /data-requests/open:
+    get:
+      tags: [data-requests]
+      summary: Admin queue of open requests
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Open requests }
+  /data-requests/{id}/review:
+    post:
+      tags: [data-requests]
+      summary: Admin approve/reject; approved deletions start purge pipeline
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [approved, rejected] }
+                note: { type: string }
+      responses:
+        '201': { description: Review recorded }
+  /webhooks/integrations/{slug}:
+    post:
+      tags: [webhooks]
+      summary: Receive HMAC-signed callback from a registered integration
+      security: []
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event: { type: string, example: claim.status_changed }
+                payload: { type: object }
+      responses:
+        '202': { description: Accepted (signature valid) }
+        '400': { description: unknown integration / missing signature }
+        '502': { description: invalid signature }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

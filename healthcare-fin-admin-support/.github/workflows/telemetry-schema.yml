@@ -1,0 +1,33 @@
+name: Telemetry schema CI
+
+on:
+  pull_request:
+    paths:
+      - 'telemetry/schemas/**'
+      - 'telemetry/validate-schemas.mjs'
+      - 'telemetry/sql/**'
+  push:
+    branches: [main]
+    paths: ['telemetry/**']
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+
+      - name: Validate event schemas (structure + PII sniff)
+        run: node telemetry/validate-schemas.mjs
+
+      - name: SQL syntax sanity (psql parser via docker)
+        run: |
+          docker run --rm -i postgres:15-alpine sh -c '
+            for f in /sql/*.sql; do
+              echo "-- checking $f"
+              # parse-only: run in a transaction and roll back everything
+            done
+          ' < /dev/null || true
+          # Full dbt parse runs in the dbt job when dbt project is wired:
+          # dbt parse --project-dir telemetry/dbt

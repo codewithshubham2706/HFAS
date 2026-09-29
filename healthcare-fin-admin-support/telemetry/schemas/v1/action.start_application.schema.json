@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hfas.example.org/schemas/v1/action.start_application.schema.json",
+  "title": "action.start_application (v1)",
+  "allOf": [{ "$ref": "./base.schema.json" }],
+  "properties": {
+    "eventName": { "const": "action.start_application" },
+    "properties": {
+      "type": "object",
+      "required": ["schemeSlug", "source"],
+      "properties": {
+        "schemeSlug": { "type": "string", "maxLength": 80, "examples": ["hospital-care-subsidy", "acmecare-topup"] },
+        "source": { "type": "string", "enum": ["dashboard_quick_action", "results_card", "scheme_detail", "stepper_drawer"] },
+        "matchScore": { "type": "integer", "minimum": 0, "maximum": 100, "description": "Eligibility score shown to the user at click time." },
+        "applicationId": { "type": "string", "format": "uuid", "description": "Server-generated draft id, if already created." }
+      },
+      "additionalProperties": false
+    }
+  }
+}

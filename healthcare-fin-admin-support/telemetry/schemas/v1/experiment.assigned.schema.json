@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hfas.example.org/schemas/v1/experiment.assigned.schema.json",
+  "title": "experiment.assigned (v1)",
+  "description": "Exposure event — fired once per user/variant when first rendering a variant. Analysis joins metrics on experimentKey+variant.",
+  "allOf": [{ "$ref": "./base.schema.json" }],
+  "properties": {
+    "eventName": { "const": "experiment.assigned" },
+    "properties": {
+      "type": "object",
+      "required": ["experimentKey", "variant", "assignedAt"],
+      "properties": {
+        "experimentKey": { "type": "string", "maxLength": 80, "pattern": "^[a-z0-9_]+$", "examples": ["ocr_verify_gate", "adaptive_form_simplifier"] },
+        "variant": { "type": "string", "maxLength": 40, "examples": ["control", "treatment"] },
+        "assignedAt": { "type": "string", "format": "date-time" },
+        "assignmentSalt": { "type": "string", "maxLength": 40, "description": "Hash salt — lets analysis reproduce assignment without storing user lists." },
+        "stickyBucket": { "type": "string", "maxLength": 12, "description": "First two hex of the assignment hash; coarse bucket only." }
+      },
+      "additionalProperties": false
+    }
+  }
+}

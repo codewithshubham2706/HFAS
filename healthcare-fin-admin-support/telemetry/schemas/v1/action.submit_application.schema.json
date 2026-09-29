@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hfas.example.org/schemas/v1/action.submit_application.schema.json",
+  "title": "action.submit_application (v1)",
+  "allOf": [{ "$ref": "./base.schema.json" }],
+  "properties": {
+    "eventName": { "const": "action.submit_application" },
+    "properties": {
+      "type": "object",
+      "required": ["applicationId", "schemeSlug", "outcome"],
+      "properties": {
+        "applicationId": { "type": "string", "format": "uuid" },
+        "schemeSlug": { "type": "string", "maxLength": 80 },
+        "outcome": { "type": "string", "enum": ["submitted", "blocked_consent", "blocked_validation", "blocked_fraud_flag", "abandoned"] },
+        "progressPct": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "priorityScore": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+        "approvalLikelihood": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+        "totalEdits": { "type": "integer", "minimum": 0 },
+        "dwellMs": { "type": "integer", "minimum": 0, "description": "Application start → submit wall time." }
+      },
+      "additionalProperties": false
+    }
+  }
+}

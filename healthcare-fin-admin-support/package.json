@@ -1,0 +1,16 @@
+{
+  "name": "hfas-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Healthcare Financial & Administrative Support (HFAS) — monorepo helper scripts",
+  "license": "MIT",
+  "scripts": {
+    "setup": "bash scripts/setup_local.sh",
+    "db:migrate": "docker compose exec -T db psql -U hfas -d hfas -f /docker-entrypoint-initdb.d/05-create_tables.sql",
+    "db:seed": "docker compose exec -T db psql -U hfas -d hfas -f /docker-entrypoint-initdb.d/10-seed_data.sql",
+    "db:psql": "docker compose exec db psql -U hfas -d hfas",
+    "licenses:check": "node scripts/check_licenses.mjs",
+    "dev:up": "docker compose up --build",
+    "dev:down": "docker compose down"
+  }
+}

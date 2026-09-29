@@ -1,0 +1,41 @@
+name: Synthetic monitors
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'          # every 30 min against staging
+  workflow_dispatch:
+
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+
+      - name: Install Playwright
+        run: |
+          npm i -g playwright && playwright install chromium --with-deps
+
+      - name: Run synthetic suite
+        working-directory: telemetry/synthetic
+        env:
+          WEB_BASE: ${{ vars.STAGING_WEB_URL }}
+          API_BASE: ${{ vars.STAGING_API_URL }}/api
+          SYNTHETIC_ENV: staging
+          CI: 'true'
+        run: |
+          npm init -y >/dev/null
+          npm i -D @playwright/test >/dev/null
+          npx playwright test --reporter=list
+
+      # Failures emit synthetic.run_result themselves (see specs);
+      # alert rule `synthetic_run_failure` opens the issue + pings Slack.
+      - name: Upload trace artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-traces
+          path: telemetry/synthetic/test-results
+          retention-days: 14

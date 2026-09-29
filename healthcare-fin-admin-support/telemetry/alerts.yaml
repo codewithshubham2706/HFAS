@@ -1,0 +1,167 @@
+# ═══════════════════════════════════════════════════════════════
+# HFAS — behavioral alert & auto-triage rules
+# Each rule: trigger → attach top-N sample sessions → auto-create
+# GitHub issue + Slack notification.
+# Scheduler: cron every 5 min against the warehouse (or Prometheus
+# for infra-level metrics — this file covers product-level signals).
+# ═══════════════════════════════════════════════════════════════
+version: 1
+defaults:
+  evaluation_window: 30m
+  cooldown: 60m                # don't re-fire same rule within an hour
+  sample_sessions: 10
+  severity_routing:
+    sev1: [slack:#hfas-incidents, github:hfas/hfas-backend]
+    sev2: [slack:#hfas-product-alerts, github:hfas/hfas-backend]
+    sev3: [slack:#hfas-product-alerts]
+
+rules:
+  - id: upload_failure_spike
+    title: "Document upload failures spiking"
+    severity: sev1
+    trigger:
+      sql: |
+        SELECT count(*) AS failures,
+               count(DISTINCT session_id) AS affected_sessions
+        FROM telemetry_events
+        WHERE event_name = 'action.upload_attempt'
+          AND props->>'error' IS NOT NULL
+          AND ts > now() - interval '30 minutes'
+      condition: "failures >= 10 AND failures >= 3 * baseline_same_hour_yesterday"
+    sample_sql: |
+      SELECT session_id, max(ts) AS last_seen,
+             max(props->>'error') AS error_code,
+             max(props->>'contentType') AS content_type
+      FROM telemetry_events
+      WHERE event_name = 'action.upload_attempt' AND props->>'error' IS NOT NULL
+        AND ts > now() - interval '30 minutes'
+      GROUP BY session_id ORDER BY last_seen DESC LIMIT {{ sample_sessions }}
+    issue_template:
+      title: "[auto] Upload failure spike — {failures} failures / 30m"
+      labels: [telemetry, auto-triage, uploads]
+      body: |
+        ## Signal
+        failures={failures} affected_sessions={affected_sessions} window=30m
+        ## Sample sessions (id + error code only — no PII)
+        {sample_table}
+        ## First checks
+        1. MinIO/S3 health (`GET /admin/overview` documents_in_flight)
+        2. Presign TTL vs client clock drift
+        3. Content-type allowlist rejections (new phone models?)
+    slack_payload:
+      text: ":rotating_light: *{title}* — failures={failures}, sessions={affected_sessions}. Issue auto-opened."
+
+  - id: ocr_latency_spike
+    title: "OCR latency p95 above SLO"
+    severity: sev2
+    trigger:
+      sql: |
+        SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY (props->>'latencyMs')::int) AS p95_ms
+        FROM telemetry_events
+        WHERE event_name = 'action.ocr_extracted'
+          AND ts > now() - interval '30 minutes'
+      condition: "p95_ms > 5000"
+    sample_sql: |
+      SELECT session_id, (props->>'latencyMs')::int AS latency_ms,
+             props->>'provider' AS provider, props->>'docType' AS doc_type, ts
+      FROM telemetry_events
+      WHERE event_name = 'action.ocr_extracted' AND ts > now() - interval '30 minutes'
+      ORDER BY (props->>'latencyMs')::int DESC LIMIT {{ sample_sessions }}
+    issue_template:
+      title: "[auto] OCR p95 latency {p95_ms}ms > 5000ms SLO"
+      labels: [telemetry, auto-triage, ocr]
+      body: |
+        p95={p95_ms}ms. Provider breakdown in samples below.
+        If provider=gcv: check quota + region; consider cost-aware sampling fallback (OCR provider=mock for low-value claims).
+
+  - id: experience_score_drop
+    title: "Experience score dropped cohort-wide"
+    severity: sev2
+    trigger:
+      sql: |
+        SELECT locale, avg(experience_score) AS avg_exp, count(*) AS sessions
+        FROM session_metrics
+        WHERE session_date = current_date
+        GROUP BY locale HAVING count(*) >= 50
+      condition: "avg_exp < (baseline_7d_avg - 8)"   # 8-point material drop
+    sample_sql: |
+      SELECT session_id, intent_score, effort_score, uploads_failed, help_requests
+      FROM session_metrics
+      WHERE session_date = current_date AND locale = '{locale}'
+      ORDER BY effort_score DESC LIMIT {{ sample_sessions }}
+    issue_template:
+      title: "[auto] experience_score drop ({delta}pts) — locale={locale}"
+      labels: [telemetry, experience, regression]
+      body: |
+        avg_exp_today={avg_exp} baseline_7d={baseline}. Attach leak-path diff:
+        run telemetry/sql/20_leak_paths.sql for today vs 7d baseline.
+
+  - id: cohort_step_drop
+    title: "Cohort leaking at a specific step"
+    severity: sev2
+    trigger:
+      sql: |
+        SELECT from_step, to_step, exit_rate_pct, sessions_entering
+        FROM top_leak_paths
+        WHERE computed_at::date = current_date
+      condition: "exit_rate_pct > 60 AND sessions_entering >= 30 AND exit_rate_pct > baseline_7d + 15"
+    sample_sql: |
+      SELECT m.session_id, m.locale, m.intent_score, m.effort_score
+      FROM session_metrics m
+      WHERE m.session_date = current_date AND m.submits = 0
+      ORDER BY m.effort_score DESC LIMIT {{ sample_sessions }}
+    issue_template:
+      title: "[auto] Leak at {from_step} → {to_step} ({exit_rate_pct}% exit)"
+      labels: [telemetry, funnel]
+
+  - id: synthetic_run_failure
+    title: "Synthetic monitor failed"
+    severity: sev1
+    trigger:
+      sql: |
+        SELECT scenario, outcome, count(*) AS n
+        FROM telemetry_events
+        WHERE event_name = 'synthetic.run_result'
+          AND ts > now() - interval '30 minutes'
+        GROUP BY 1, 2
+      condition: "outcome IN ('failed','timeout') AND n >= 2"   # 2 consecutive-ish → real
+    sample_sql: |
+      SELECT props->>'scenario' AS scenario, props->>'failedStep' AS failed_step,
+             (props->>'durationMs')::int AS duration_ms, ts
+      FROM telemetry_events
+      WHERE event_name = 'synthetic.run_result' AND props->>'outcome' IN ('failed','timeout')
+        AND ts > now() - interval '30 minutes'
+      ORDER BY ts DESC LIMIT {{ sample_sessions }}
+    issue_template:
+      title: "[auto] Synthetic {scenario} failing at {failed_step}"
+      labels: [telemetry, synthetic, sev1]
+      body: |
+        Playwright report artifact attached by CI (runId in samples).
+        Check staging health before production_readonly conclusions.
+
+  - id: experiment_anomaly
+    title: "Experiment guardrail breached"
+    severity: sev3
+    trigger:
+      sql: |
+        SELECT props->>'experimentKey' AS experiment, props->>'variant' AS variant,
+               count(DISTINCT session_id) AS exposures
+        FROM telemetry_events
+        WHERE event_name = 'experiment.assigned'
+          AND ts > now() - interval '24 hours'
+        GROUP BY 1, 2
+      condition: |
+        SRM check: chi-square p < 0.001 on variant split
+        OR treatment experience_score < control - 10
+    sample_sql: |
+      SELECT session_id, props->>'variant' AS variant, ts
+      FROM telemetry_events
+      WHERE event_name = 'experiment.assigned'
+        AND props->>'experimentKey' = '{experiment}'
+        AND ts > now() - interval '24 hours'
+      LIMIT {{ sample_sessions }}
+    issue_template:
+      title: "[auto] Experiment {experiment} guardrail: SRM or experience regression"
+      labels: [telemetry, experimentation]
+      body: |
+        {details}. Action: pause via feature flag `exp_{experiment}` and rerun SRM check.

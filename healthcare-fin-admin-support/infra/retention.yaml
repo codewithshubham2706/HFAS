@@ -1,0 +1,54 @@
+# ═══════════════════════════════════════════════════════════════
+# HFAS — data retention & purge policy (consumed by purge jobs)
+# Values are a proposal — **REQUIRES LEGAL REVIEW** per jurisdiction
+# (India DPDP, EU GDPR, US state laws). Lawful-hold overrides apply.
+# ═══════════════════════════════════════════════════════════════
+
+version: 1
+
+defaults:
+  # After account deletion request is approved:
+  deletion:
+    anonymize_user_profile: true      # name/dob/address → tombstone
+    purge_documents_objects: true     # delete S3 objects + rows' OCR text
+    purge_application_form_data: true # drop form_data JSONB content
+    keep_consent_records: true        # legal basis proof — see note
+    keep_audit_stubs: true            # id + action only, metadata emptied
+    grace_period_days: 30             # undo window before purge executes
+
+entities:
+  otp_codes:
+    retention: 1 day                  # then hard delete
+  refresh_tokens:
+    retention: 30 days after expiry
+  documents:
+    retention: 7 years after application decision   # **REQUIRES LEGAL REVIEW** (tax/audit)
+    ocr_text: same_as_document
+  applications:
+    form_data: 7 years after decision               # **REQUIRES LEGAL REVIEW**
+    reference_number: keep_indefinitely             # audit stub (no PII)
+  consent_records:
+    # Prove lawful basis; typically retained past account deletion.
+    # **REQUIRES LEGAL REVIEW** — your DPO may require 6–10 years.
+    retention: 8 years after last consent event
+    immutable: true
+  audit_logs:
+    # Append-only; entries tied to a deleted user are reduced to stubs
+    # (actor_id nulled, metadata = {}), never removed.
+    retention: 3 years                              # **REQUIRES LEGAL REVIEW**
+  notifications:
+    retention: 13 months
+  deletion_requests:
+    retention: 6 years after completion             # proof of compliance
+
+jobs:
+  otp_sweep:
+    schedule: "0 * * * *"     # hourly
+    action: DELETE FROM otp_codes WHERE expires_at < now() - interval '1 day';
+  refresh_token_sweep:
+    schedule: "0 3 * * *"     # daily
+    action: DELETE FROM refresh_tokens WHERE expires_at < now() - interval '30 days';
+  deletion_executor:
+    schedule: "0 4 * * *"     # daily
+    handler: backend/src/dataprotection/deletion-executor.ts
+    requires_admin_approval: true

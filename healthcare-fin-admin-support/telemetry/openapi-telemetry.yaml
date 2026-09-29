@@ -1,0 +1,102 @@
+# ─────────────────────────────────────────────────────────────
+# OpenAPI fragment — merge into backend/openapi/openapi.yaml under paths:
+# ─────────────────────────────────────────────────────────────
+  /telemetry/ingest:
+    post:
+      tags: [telemetry]
+      summary: Batch-ingest behavioral events (≤100/batch)
+      description: |
+        Idempotent by eventId. Auth optional (anonymous page_view allowed).
+        Rate limits (WAF layer): 60 req/min/IP anonymous, 600 req/min/user.
+        Event payloads MUST conform to schemas in /telemetry/schemas/v1 —
+        PII never allowed in properties. **REQUIRES LEGAL REVIEW** for any
+        new event or identifier.
+      security: [{ bearerAuth: [] }, {}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: object
+                    required: [eventId, eventName, schemaVersion, sessionId, anonymousId, timestamp, properties]
+                    properties:
+                      eventId: { type: string, format: uuid }
+                      eventName:
+                        type: string
+                        enum: [page_view, action.start_application, action.upload_attempt,
+                               action.ocr_extracted, action.ocr_confirmed, action.field_edit,
+                               action.submit_application, experiment.assigned, support.request_help,
+                               session.replay_consent, synthetic.run_result]
+                      schemaVersion: { type: string, examples: [v1] }
+                      sessionId: { type: string, format: uuid }
+                      userId: { type: [string, 'null'], format: uuid }
+                      anonymousId: { type: string, format: uuid }
+                      timestamp: { type: string, format: date-time }
+                      traceId: { type: string }
+                      properties: { type: object }
+            examples:
+              page_view:
+                value:
+                  events:
+                    - eventId: 7b2e1c10-6f0d-4a55-9a30-9f5e6a1b2001
+                      eventName: page_view
+                      schemaVersion: v1
+                      sessionId: a1111111-0000-4000-8000-000000000001
+                      userId: null
+                      anonymousId: b2222222-0000-4000-8000-000000000002
+                      timestamp: '2026-09-30T10:15:00Z'
+                      traceId: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+                      properties: { page: application-documents, locale: en-IN, a11yMode: false }
+              ocr_extracted:
+                value:
+                  events:
+                    - eventId: 7b2e1c10-6f0d-4a55-9a30-9f5e6a1b2002
+                      eventName: action.ocr_extracted
+                      schemaVersion: v1
+                      sessionId: a1111111-0000-4000-8000-000000000001
+                      anonymousId: b2222222-0000-4000-8000-000000000002
+                      timestamp: '2026-09-30T10:16:20Z'
+                      properties:
+                        documentId: ccccccc1-0000-4000-8000-000000000001
+                        docType: hospital_invoice
+                        provider: mock
+                        fieldCount: 3
+                        confidenceBuckets: { high_ge90: 2, medium_70_89: 1, low_lt70: 0 }
+                        latencyMs: 1820
+                        status: parsed
+      responses:
+        '200':
+          description: Accepted (per-event validation report)
+          content:
+            application/json:
+              example:
+                accepted: 2
+                rejected: []
+        '400': { description: batch too large / envelope invalid }
+  /telemetry/replay-consent:
+    post:
+      tags: [telemetry]
+      summary: Record session-replay consent (immutable ledger + event)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, anonymousId, granted, scope]
+              properties:
+                sessionId: { type: string, format: uuid }
+                anonymousId: { type: string, format: uuid }
+                granted: { type: boolean }
+                scope: { type: string, enum: [current_session, all_future_sessions] }
+                consentVersion: { type: string, examples: [replay-v1.0] }
+      responses:
+        '200': { description: recorded }
